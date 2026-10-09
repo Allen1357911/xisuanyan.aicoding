@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: DormRepairSystem
+  datasource:
+    # 内嵌 H2 数据库（内存模式）：不需要安装 MySQL，启动即用。
+    # 每次启动都会重新执行 sql/schema.sql 和 sql/data.sql，数据始终是初始状态。
+    url: jdbc:h2:mem:dormrepair;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;NON_KEYWORDS=USER,ROLE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ''
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:sql/schema.sql
+      data-locations: classpath:sql/data.sql
+      encoding: UTF-8
+  h2:
+    console:
+      # 浏览器打开 http://localhost:8082/h2-console 可以直接查看和修改数据
+      enabled: true
+      path: /h2-console
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+server:
+  port: 8082
+
+# JWT配置
+jwt:
+  # 签名密钥：生产环境请通过 JWT_SECRET 环境变量覆盖，长度至少32字节
+  # 固定密钥后，服务重启不会导致已登录用户掉线，也支持多实例部署
+  secret: ${JWT_SECRET:dorm-repair-system-dev-only-secret-key-please-change-me}
+  # 访问令牌有效期：2小时（毫秒）
+  access-token-expiration: 7200000
+  # 刷新令牌有效期：7天（毫秒）
+  refresh-token-expiration: 604800000
+
+# 图片存储：保存到本地目录，不需要任何云服务账号
+file:
+  storage:
+    # 图片保存目录（相对项目根目录）
+    location: uploads
+    # 访问前缀，与 WebConfig 中 /uploads/** 的静态资源映射保持一致
+    url-prefix: /uploads
+
+# 查询分页兜底：页码小于 1 时回到第 1 页，每页条数小于 1 时回到默认值，
+# 超过上限时夹到上限（防止 size=100000 这类请求把整张表一次性读进内存）。
+# 上限取得远高于正常用法，如确有"一次拉全量"的需求可直接调大或设为很大的值。
+paging:
+  default-size: 5
+  max-size: 500
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: org.example.dormrepairsystem.entity
+  configuration:
+    map-underscore-to-camel-case: true
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+  show-actuator: false

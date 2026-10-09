@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>提交报修 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="提交报修" data-kicker="STUDENT / NEW TICKET">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>提交报修</h2>
+                    <p>把设备类型和现象写清楚，维修人员能更快判断该带什么工具。</p>
+                </div>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <!-- 受理回执：提交成功后展示 -->
+            <div class="bp-card bp-in bp-hide" id="receipt">
+                <div class="bp-card__head">
+                    <h3>受理回执 / RECEIPT</h3>
+                    <span class="bp-card__hint">已生成工单</span>
+                </div>
+                <div id="receiptBody"></div>
+            </div>
+
+            <div class="bp-card bp-in" id="formCard">
+                <div class="bp-card__head">
+                    <h3>报修单 / WORK ORDER</h3>
+                    <span class="bp-card__hint" id="dormHint">宿舍地址读取中…</span>
+                </div>
+
+                <form id="orderForm" novalidate>
+                    <div class="bp-field">
+                        <label for="deviceType">设备类型 / DEVICE</label>
+                        <input class="bp-input" id="deviceType" type="text" placeholder="如 水龙头 / 电灯 / 空调 / 马桶"
+                            required>
+                    </div>
+
+                    <div class="bp-field">
+                        <label for="problemDesc">问题描述 / DESCRIPTION</label>
+                        <textarea class="bp-textarea" id="problemDesc" rows="4"
+                            placeholder="例如：洗手池水龙头一直滴水，拧到底也关不紧" required></textarea>
+                        <div class="bp-field__hint">越具体越好：什么设备、什么现象、什么时候开始的</div>
+                    </div>
+
+                    <div class="bp-field">
+                        <label>现场照片 / PHOTOS（可选，最多 3 张）</label>
+                        <div class="bp-slots" id="slots"></div>
+                    </div>
+
+                    <div class="bp-row">
+                        <button class="bp-btn bp-btn--primary" id="submitBtn" type="submit">提交报修</button>
+                        <button class="bp-btn bp-btn--ghost" id="resetBtn" type="reset">重置</button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        var MAX_IMAGES = 3;
+
+        var user = App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+        var form = document.getElementById('orderForm');
+        var submitBtn = document.getElementById('submitBtn');
+        var slotsEl = document.getElementById('slots');
+        var files = [];
+
+        if (user) {
+            renderSlots();
+            loadDormitoryHint();
+        }
+
+        /* 三个票位：可点选、可预览 */
+        function renderSlots() {
+            slotsEl.innerHTML = files.map(function (item, index) {
+                return '<label class="bp-slot">'
+                    + '<input type="file" accept="image/*" data-index="' + index + '">'
+                    + (item.preview
+                        ? '<img src="' + item.preview + '" alt="预览">'
+                        : '<span class="bp-slot__no">PHOTO 0' + (index + 1) + '</span>')
+                    + '<span class="bp-slot__text">' + (item.preview ? '点击更换' : '点击选择图片') + '</span>'
+                    + '</label>';
+            }).join('') + (files.length < MAX_IMAGES
+                ? '<label class="bp-slot">'
+                + '<input type="file" accept="image/*" data-add="1">'
+                + '<span class="bp-slot__no">PHOTO 0' + (files.length + 1) + '</span>'
+                + '<span class="bp-slot__text">点击选择图片</span>'
+                + '</label>'
+                : '');
+        }
+
+        slotsEl.addEventListener('change', function (event) {
+            var input = event.target;
+            if (!input.files || !input.files[0]) {
+                return;
+            }
+            var file = input.files[0];
+
+            if (input.dataset.add) {
+                if (files.length >= MAX_IMAGES) {
+                    return;
+                }
+                files.push({ file: file });
+            } else {
+                var index = Number(input.dataset.index);
+                files[index] = { file: file };
+            }
+
+            /* 生成缩略图 */
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                var index = input.dataset.add ? files.length - 1 : Number(input.dataset.index);
+                if (files[index]) {
+                    files[index].preview = e.target.result;
+                }
+                renderSlots();
+            };
+            reader.readAsDataURL(file);
+        });
+
+        /* 提示当前绑定的宿舍地址 */
+        function loadDormitoryHint() {
+            App.API.call(App.API.get('/dormitories', { userId: user.userId })).then(function (result) {
+                var hint = document.getElementById('dormHint');
+                if (result.ok && result.data) {
+                    hint.textContent = '报修地址：' + result.data.building + ' ' + result.data.roomNum;
+                } else {
+                    hint.textContent = '未绑定宿舍';
+                    App.UI.alert(alertEl, '你还没有绑定宿舍，请先绑定后再提交报修', 'err');
+                }
+            });
+        }
+
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            var deviceType = document.getElementById('deviceType').value.trim();
+            var problemDesc = document.getElementById('problemDesc').value.trim();
+
+            if (!deviceType) {
+                App.UI.alert(alertEl, '请填写设备类型', 'err');
+                return;
+            }
+            if (!problemDesc) {
+                App.UI.alert(alertEl, '请描述一下问题现象', 'err');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '提交中…';
+
+            App.API.call(App.API.post('/repair-orders', {
+                deviceType: deviceType,
+                problemDesc: problemDesc
+            })).then(function (result) {
+                if (!result.ok) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '提交报修';
+                    App.UI.alert(alertEl, result.message || '提交失败，请稍后重试', 'err');
+                    return;
+                }
+
+                var order = result.data || {};
+                uploadImages(order.orderId, 0, 0, 0, order);
+            });
+        });
+
+        /* 图片逐张上传，最后统一出回执 */
+        function uploadImages(orderId, index, okCount, failCount, order) {
+            if (index >= files.length) {
+                finish(order, okCount, failCount);
+                return;
+            }
+            submitBtn.textContent = '上传图片 ' + (index + 1) + '/' + files.length + '…';
+
+            App.API.call(App.API.upload('/repair-orders/' + orderId + '/images', files[index].file))
+                .then(function (result) {
+                    uploadImages(orderId, index + 1, okCount + (result.ok ? 1 : 0), failCount + (result.ok ? 0 : 1), order);
+                });
+        }
+
+        function finish(order, okCount, failCount) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '提交报修';
+
+            document.getElementById('formCard').classList.add('bp-hide');
+            var receipt = document.getElementById('receipt');
+            receipt.classList.remove('bp-hide');
+            document.getElementById('receiptBody').innerHTML = ''
+                + '<div class="bp-stats">'
+                + '  <div class="bp-stat bp-stat--accent"><div class="bp-stat__n">' + App.UI.esc(order.orderId) + '</div><div class="bp-stat__k">工单号</div></div>'
+                + '  <div class="bp-stat bp-stat--pending"><div class="bp-stat__n">' + files.length + '</div><div class="bp-stat__k">照片</div></div>'
+                + '  <div class="bp-stat bp-stat--doing"><div class="bp-stat__n">' + okCount + '</div><div class="bp-stat__k">上传成功</div></div>'
+                + '</div>'
+                + '<dl class="bp-kv" style="margin-top:18px">'
+                + '  <div><dt>设备 / DEVICE</dt><dd>' + App.UI.esc(order.deviceType || '—') + '</dd></div>'
+                + '  <div><dt>状态 / STATUS</dt><dd>' + App.UI.stamp(order.orderStatus, true) + '</dd></div>'
+                + '  <div><dt>地址 / ADDRESS</dt><dd>' + App.UI.esc((order.building || '—') + ' ' + (order.roomNum || '')) + '</dd></div>'
+                + '  <div><dt>提交时间 / TIME</dt><dd class="mono">' + App.UI.time(order.createTime) + '</dd></div>'
+                + '</dl>'
+                + (failCount > 0 ? '<div class="bp-alert bp-alert--err is-on" style="margin-top:16px">有 ' + failCount + ' 张图片上传失败，可在「我的报修」里重新上传</div>' : '')
+                + '<div class="bp-row" style="margin-top:18px">'
+                + '  <a class="bp-btn bp-btn--primary" href="student-orders.html">查看我的报修</a>'
+                + '  <a class="bp-btn bp-btn--ghost" href="student-submit.html">再报一单</a>'
+                + '</div>';
+        }
+    </script>
+</body>
+
+</html>

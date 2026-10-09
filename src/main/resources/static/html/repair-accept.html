@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>待接工单 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="待接工单" data-kicker="REPAIRMAN / QUEUE">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>待接工单</h2>
+                    <p>这里是全楼栋待处理的报修。接单后工单进入「我的任务」，状态变为维修中。</p>
+                </div>
+                <button class="bp-btn bp-btn--ghost" id="refreshBtn" type="button">刷新队列</button>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <section class="bp-stats bp-in">
+                <div class="bp-stat bp-stat--pending">
+                    <div class="bp-stat__n" id="statQueue">—</div>
+                    <div class="bp-stat__k">待接单</div>
+                </div>
+                <div class="bp-stat bp-stat--doing">
+                    <div class="bp-stat__n" id="statMine">—</div>
+                    <div class="bp-stat__k">我的在办</div>
+                </div>
+                <div class="bp-stat bp-stat--done">
+                    <div class="bp-stat__n" id="statDone">—</div>
+                    <div class="bp-stat__k">我的已完成</div>
+                </div>
+            </section>
+
+            <div class="bp-tickets bp-in" id="list" style="margin-top:18px">
+                <div class="bp-loading">加载中</div>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <!-- 图片查看 -->
+    <div class="bp-modal" id="imageModal" role="dialog" aria-modal="true">
+        <div class="bp-modal__box">
+            <div class="bp-modal__head">
+                <h3 id="modalTitle">现场照片</h3>
+                <button class="bp-btn bp-btn--ghost bp-btn--sm" id="modalClose" type="button">关闭</button>
+            </div>
+            <div class="bp-modal__body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        var user = App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+        var listEl = document.getElementById('list');
+
+        if (user) {
+            loadQueue();
+            loadMyStats();
+        }
+
+        document.getElementById('refreshBtn').addEventListener('click', function () {
+            loadQueue();
+            loadMyStats();
+        });
+
+        /* 待处理队列：走 status=待处理，后端不允许维修人员查别人的单 */
+        function loadQueue() {
+            listEl.innerHTML = App.UI.loading('加载中');
+            App.API.call(App.API.get('/repair-orders', { status: '待处理' })).then(function (result) {
+                if (!result.ok) {
+                    listEl.innerHTML = App.UI.empty('队列加载失败', result.message || '');
+                    return;
+                }
+                var orders = result.data || [];
+                document.getElementById('statQueue').textContent = orders.length;
+
+                App.UI.list(listEl, orders, function (order) {
+                    return '<article class="bp-ticket">'
+                        + '<div class="bp-ticket__stub">'
+                        + '  <span class="bp-ticket__no">工单</span>'
+                        + '  <span class="bp-ticket__id">' + App.UI.esc(order.orderId) + '</span>'
+                        + '  <span class="bp-ticket__no">' + App.UI.date(order.createTime) + '</span>'
+                        + '</div>'
+                        + '<div class="bp-ticket__body">'
+                        + '  <div class="bp-ticket__title">'
+                        + '    <span class="bp-ticket__device">' + App.UI.esc(order.deviceType || '未填设备') + '</span>'
+                        + App.UI.stamp(order.orderStatus, true)
+                        + '  </div>'
+                        + '  <p class="bp-ticket__desc">' + App.UI.esc(order.problemDesc || '') + '</p>'
+                        + '  <div class="bp-ticket__meta">'
+                        + '    <span>楼栋 <b>' + App.UI.esc(order.building || '—') + '</b></span>'
+                        + '    <span>房间 <b>' + App.UI.esc(order.roomNum || '—') + '</b></span>'
+                        + '    <span>报修人 <b>#' + App.UI.esc(order.userId) + '</b></span>'
+                        + '    <span>提交 <b>' + App.UI.time(order.createTime) + '</b></span>'
+                        + '  </div>'
+                        + '</div>'
+                        + '<div class="bp-ticket__side">'
+                        + '  <div class="bp-ticket__actions">'
+                        + '    <button class="bp-btn bp-btn--ghost bp-btn--sm" type="button" data-images="' + order.orderId + '">照片</button>'
+                        + '    <button class="bp-btn bp-btn--primary bp-btn--sm" type="button" data-accept="' + order.orderId + '">接单</button>'
+                        + '  </div>'
+                        + '</div>'
+                        + '</article>';
+                });
+            });
+        }
+
+        /* 我的工作量 */
+        function loadMyStats() {
+            App.API.call(App.API.get('/repair-orders', { repairmanId: user.userId })).then(function (result) {
+                var mine = result.ok && result.data ? result.data : [];
+                var doing = 0;
+                var done = 0;
+                mine.forEach(function (order) {
+                    if (order.orderStatus === '维修中') {
+                        doing += 1;
+                    } else if (order.orderStatus === '已完成') {
+                        done += 1;
+                    }
+                });
+                document.getElementById('statMine').textContent = doing;
+                document.getElementById('statDone').textContent = done;
+            });
+        }
+
+        /* 接单 */
+        listEl.addEventListener('click', function (event) {
+            var imageBtn = event.target.closest('[data-images]');
+            if (imageBtn) {
+                openImages(imageBtn.dataset.images);
+                return;
+            }
+
+            var acceptBtn = event.target.closest('[data-accept]');
+            if (!acceptBtn) {
+                return;
+            }
+            var orderId = acceptBtn.dataset.accept;
+            if (!App.UI.confirm('确定接取工单 #' + orderId + ' 吗？')) {
+                return;
+            }
+
+            acceptBtn.disabled = true;
+            acceptBtn.textContent = '接单中…';
+            App.API.call(App.API.post('/repair-orders/' + orderId + '/accept')).then(function (result) {
+                if (!result.ok) {
+                    acceptBtn.disabled = false;
+                    acceptBtn.textContent = '接单';
+                    App.UI.alert(alertEl, result.message || '接单失败', 'err');
+                    return;
+                }
+                App.UI.alert(alertEl, '工单 #' + orderId + ' 接单成功，已进入「我的任务」', 'ok');
+                loadQueue();
+                loadMyStats();
+            });
+        });
+
+        /* 图片弹窗 */
+        var modal = document.getElementById('imageModal');
+
+        function openImages(orderId) {
+            modal.classList.add('is-on');
+            document.getElementById('modalTitle').textContent = '工单 #' + orderId + ' 的现场照片';
+            document.getElementById('modalBody').innerHTML = App.UI.loading('加载中');
+
+            App.API.call(App.API.get('/repair-orders/' + orderId + '/images')).then(function (result) {
+                var images = result.ok && result.data ? result.data : [];
+                if (!images.length) {
+                    document.getElementById('modalBody').innerHTML = App.UI.empty('报修人没有上传照片');
+                    return;
+                }
+                document.getElementById('modalBody').innerHTML = '<div class="bp-gallery">'
+                    + images.map(function (image) {
+                        return '<a href="' + App.UI.esc(image.imageUrl) + '" target="_blank" rel="noopener">'
+                            + '<img src="' + App.UI.esc(image.imageUrl) + '" alt="现场照片"></a>';
+                    }).join('')
+                    + '</div>';
+            });
+        }
+
+        function closeImages() {
+            modal.classList.remove('is-on');
+        }
+
+        document.getElementById('modalClose').addEventListener('click', closeImages);
+        modal.addEventListener('click', function (event) {
+            if (event.target === modal) {
+                closeImages();
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                closeImages();
+            }
+        });
+    </script>
+</body>
+
+</html>

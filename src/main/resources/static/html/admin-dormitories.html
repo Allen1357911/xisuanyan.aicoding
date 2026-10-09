@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>宿舍管理 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="宿舍管理" data-kicker="ADMIN / DORMITORIES">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>宿舍管理</h2>
+                    <p>学生与宿舍是一对一绑定关系，删除绑定会同时删除该宿舍下的报修单。</p>
+                </div>
+                <button class="bp-btn bp-btn--ghost" id="refreshBtn" type="button">刷新</button>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <div class="bp-filters bp-in">
+                <span class="bp-filters__label">共</span>
+                <span class="mono" id="totalInfo">—</span>
+                <span class="bp-filters__label">条绑定记录</span>
+                <input class="bp-input" id="search" type="text" placeholder="搜索楼栋 / 房间号 / 学生ID"
+                    style="width:auto;min-width:220px;margin-left:auto">
+            </div>
+
+            <div id="tableWrap">
+                <div class="bp-loading">加载中</div>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+        var tableWrap = document.getElementById('tableWrap');
+        var searchInput = document.getElementById('search');
+        var records = [];
+
+        load();
+        document.getElementById('refreshBtn').addEventListener('click', load);
+        searchInput.addEventListener('input', render);
+
+        function load() {
+            tableWrap.innerHTML = App.UI.loading('加载中');
+            App.API.call(App.API.get('/dormitories', { page: 1, size: 1000 })).then(function (result) {
+                if (!result.ok) {
+                    tableWrap.innerHTML = App.UI.empty('加载失败', result.message || '');
+                    return;
+                }
+                var pageData = result.data || {};
+                records = pageData.records || [];
+                document.getElementById('totalInfo').textContent = pageData.total || records.length;
+                render();
+            });
+        }
+
+        function render() {
+            var keyword = searchInput.value.trim().toLowerCase();
+            var shown = keyword
+                ? records.filter(function (dorm) {
+                    return String(dorm.building || '').toLowerCase().indexOf(keyword) >= 0
+                        || String(dorm.roomNum || '').toLowerCase().indexOf(keyword) >= 0
+                        || String(dorm.userId || '').indexOf(keyword) >= 0;
+                })
+                : records;
+
+            if (!shown.length) {
+                tableWrap.innerHTML = App.UI.empty('没有匹配的宿舍绑定', keyword ? '换个关键词试试' : '');
+                return;
+            }
+
+            tableWrap.innerHTML = '<table class="bp-table">'
+                + '<thead><tr>'
+                + '<th>宿舍号</th><th>学生ID</th><th>楼栋</th><th>房间号</th><th>绑定时间</th><th>最近修改</th>'
+                + '<th style="text-align:right">操作</th>'
+                + '</tr></thead><tbody>'
+                + shown.map(function (dorm) {
+                    return '<tr>'
+                        + '<td class="num">#' + App.UI.esc(dorm.dormId) + '</td>'
+                        + '<td class="num">#' + App.UI.esc(dorm.userId) + '</td>'
+                        + '<td>' + App.UI.esc(dorm.building || '—') + '</td>'
+                        + '<td class="num">' + App.UI.esc(dorm.roomNum || '—') + '</td>'
+                        + '<td class="num">' + App.UI.time(dorm.createTime) + '</td>'
+                        + '<td class="num">' + App.UI.time(dorm.updateTime) + '</td>'
+                        + '<td><div class="bp-table__actions">'
+                        + '<button class="bp-btn bp-btn--danger bp-btn--sm" type="button" data-delete="' + dorm.dormId + '">删除绑定</button>'
+                        + '</div></td>'
+                        + '</tr>';
+                }).join('')
+                + '</tbody></table>';
+        }
+
+        tableWrap.addEventListener('click', function (event) {
+            var button = event.target.closest('[data-delete]');
+            if (!button) {
+                return;
+            }
+            var dormId = button.dataset.delete;
+            if (!App.UI.confirm('删除宿舍 #' + dormId + ' 的绑定？该宿舍下的报修单会被一并删除，无法恢复。')) {
+                return;
+            }
+
+            button.disabled = true;
+            App.API.call(App.API.del('/dormitories/' + dormId)).then(function (result) {
+                if (!result.ok) {
+                    button.disabled = false;
+                    App.UI.alert(alertEl, result.message || '删除失败', 'err');
+                    return;
+                }
+                App.UI.alert(alertEl, '宿舍 #' + dormId + ' 的绑定已删除', 'ok');
+                load();
+            });
+        });
+    </script>
+</body>
+
+</html>

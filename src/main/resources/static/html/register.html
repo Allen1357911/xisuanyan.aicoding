@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>注册 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body>
+    <div class="bp-auth">
+        <!-- 左：图纸区 -->
+        <aside class="bp-auth__side">
+            <div class="bp-auth__brand">
+                <span class="bp-brand__mark">修</span>
+                <span class="bp-brand__text">DormRepairSystem</span>
+            </div>
+
+            <h1 class="bp-auth__title">注册<em>报修</em>账号</h1>
+
+            <div class="bp-auth__foot">
+                账号以 3 开头 → 学生<br>
+                账号以 2 开头 → 维修人员
+            </div>
+        </aside>
+
+        <!-- 右：表单区 -->
+        <section class="bp-auth__form">
+            <div>
+                <h2>注册</h2>
+                <p class="lede">账号规则决定角色，管理员账号由系统预置，不开放注册。</p>
+
+                <div class="bp-alert" id="alert" role="status"></div>
+
+                <form id="registerForm" autocomplete="off" novalidate>
+                    <div class="bp-field">
+                        <label for="account">账号 / ACCOUNT</label>
+                        <input class="bp-input" id="account" name="account" type="text" inputmode="numeric"
+                            placeholder="3xxxxx 或 2xxxxx" required>
+                        <div class="bp-field__hint" id="roleHint">账号以 3 开头将注册为学生，以 2 开头将注册为维修人员</div>
+                    </div>
+
+                    <div class="bp-field-row">
+                        <div class="bp-field">
+                            <label for="userName">姓名 / NAME</label>
+                            <input class="bp-input" id="userName" name="userName" type="text" placeholder="真实姓名"
+                                required>
+                        </div>
+
+                        <div class="bp-field">
+                            <label for="password">密码 / PASSWORD</label>
+                            <input class="bp-input" id="password" name="password" type="password"
+                                placeholder="至少 6 位" required>
+                        </div>
+                    </div>
+
+                    <div class="bp-field">
+                        <label for="confirmPassword">确认密码 / CONFIRM</label>
+                        <input class="bp-input" id="confirmPassword" name="confirmPassword" type="password"
+                            placeholder="再输入一次密码" required>
+                    </div>
+
+                    <button class="bp-btn bp-btn--primary bp-btn--block" id="submitBtn" type="submit">提交注册</button>
+                </form>
+
+                <div class="bp-auth__swap">
+                    已经有账号了？<a href="login.html">返回登录</a>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        var alertEl = document.getElementById('alert');
+        var form = document.getElementById('registerForm');
+        var submitBtn = document.getElementById('submitBtn');
+        var accountInput = document.getElementById('account');
+        var roleHint = document.getElementById('roleHint');
+
+        /* 边输边提示将要注册的角色 */
+        accountInput.addEventListener('input', function () {
+            var value = accountInput.value.trim();
+            if (value.charAt(0) === '3') {
+                roleHint.textContent = '该账号将注册为：学生';
+            } else if (value.charAt(0) === '2') {
+                roleHint.textContent = '该账号将注册为：维修人员';
+            } else {
+                roleHint.textContent = '账号以 3 开头将注册为学生，以 2 开头将注册为维修人员';
+            }
+        });
+
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            var account = accountInput.value.trim();
+            var userName = document.getElementById('userName').value.trim();
+            var password = document.getElementById('password').value;
+            var confirmPassword = document.getElementById('confirmPassword').value;
+
+            if (!/^[23]\d{2,}$/.test(account)) {
+                App.UI.alert(alertEl, '账号需以 2 或 3 开头的数字，例如 3001、2001', 'err');
+                return;
+            }
+            if (!userName) {
+                App.UI.alert(alertEl, '请输入姓名', 'err');
+                return;
+            }
+            if (password.length < 6) {
+                App.UI.alert(alertEl, '密码至少 6 位', 'err');
+                return;
+            }
+            if (password !== confirmPassword) {
+                App.UI.alert(alertEl, '两次输入的密码不一致', 'err');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '提交中…';
+
+            App.API.call(App.API.post('/users', {
+                account: account,
+                password: password,
+                userName: userName
+            })).then(function (result) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '提交注册';
+
+                if (!result.ok) {
+                    App.UI.alert(alertEl, result.message || '注册失败', 'err');
+                    return;
+                }
+
+                App.UI.alert(alertEl, '注册成功，正在跳转登录页…', 'ok');
+                setTimeout(function () {
+                    location.href = 'login.html';
+                }, 1200);
+            });
+        });
+    </script>
+</body>
+
+</html>

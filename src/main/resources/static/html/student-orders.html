@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的报修 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="我的报修" data-kicker="STUDENT / MY TICKETS">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>我的报修</h2>
+                    <p>待处理、维修中的工单可以取消；师傅提交完工后（待确认）由你确认验收。</p>
+                </div>
+                <a class="bp-btn bp-btn--primary" href="student-submit.html">＋ 提交新的报修</a>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <div class="bp-filters bp-in">
+                <span class="bp-filters__label">状态筛选</span>
+                <button class="bp-chip" type="button" data-status="" aria-pressed="true">全部</button>
+                <button class="bp-chip" type="button" data-status="待处理" aria-pressed="false">待处理</button>
+                <button class="bp-chip" type="button" data-status="维修中" aria-pressed="false">维修中</button>
+                <button class="bp-chip" type="button" data-status="待确认" aria-pressed="false">待确认</button>
+                <button class="bp-chip" type="button" data-status="已完成" aria-pressed="false">已完成</button>
+                <button class="bp-chip" type="button" data-status="已取消" aria-pressed="false">已取消</button>
+            </div>
+
+            <div class="bp-tickets" id="list">
+                <div class="bp-loading">加载中</div>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <!-- 图片查看 -->
+    <div class="bp-modal" id="imageModal" role="dialog" aria-modal="true">
+        <div class="bp-modal__box">
+            <div class="bp-modal__head">
+                <h3 id="modalTitle">工单照片</h3>
+                <button class="bp-btn bp-btn--ghost bp-btn--sm" id="modalClose" type="button">关闭</button>
+            </div>
+            <div class="bp-modal__body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        var user = App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+        var listEl = document.getElementById('list');
+        var orders = [];
+        var activeStatus = '';
+
+        if (user) {
+            loadOrders();
+        }
+
+        function loadOrders() {
+            listEl.innerHTML = App.UI.loading('加载中');
+            App.API.call(App.API.get('/repair-orders', { userId: user.userId })).then(function (result) {
+                if (!result.ok) {
+                    listEl.innerHTML = App.UI.empty('加载失败', result.message || '');
+                    return;
+                }
+                orders = result.data || [];
+                render();
+            });
+        }
+
+        function render() {
+            var shown = activeStatus
+                ? orders.filter(function (order) { return order.orderStatus === activeStatus; })
+                : orders;
+
+            App.UI.list(listEl, shown, function (order) {
+                return ticket(order);
+            });
+        }
+
+        function ticket(order) {
+            var status = order.orderStatus;
+            // 待处理、维修中可以取消；待确认的工单在等验收，学生不能自己撤单
+            var canCancel = status === '待处理' || status === '维修中';
+            // 只有师傅提交完工会进入待确认，学生在这一步确认验收，不能跳过师傅直接从维修中确认
+            var canConfirm = status === '待确认';
+
+            var assignee = order.repairmanId
+                ? '已派工（师傅 #' + App.UI.esc(order.repairmanId) + '）'
+                : '等待接单';
+
+            return '<article class="bp-ticket">'
+                + '<div class="bp-ticket__stub">'
+                + '  <span class="bp-ticket__no">工单</span>'
+                + '  <span class="bp-ticket__id">' + App.UI.esc(order.orderId) + '</span>'
+                + '  <span class="bp-ticket__no">' + App.UI.date(order.createTime) + '</span>'
+                + '</div>'
+                + '<div class="bp-ticket__body">'
+                + '  <div class="bp-ticket__title">'
+                + '    <span class="bp-ticket__device">' + App.UI.esc(order.deviceType || '未填设备') + '</span>'
+                + App.UI.stamp(status, true)
+                + '  </div>'
+                + '  <p class="bp-ticket__desc">' + App.UI.esc(order.problemDesc || '') + '</p>'
+                + '  <div class="bp-ticket__meta">'
+                + '    <span>地址 <b>' + App.UI.esc((order.building || '—') + ' ' + (order.roomNum || '')) + '</b></span>'
+                + '    <span>进度 <b>' + assignee + '</b></span>'
+                + '    <span>更新 <b>' + App.UI.time(order.updateTime) + '</b></span>'
+                + '  </div>'
+                + '</div>'
+                + '<div class="bp-ticket__side">'
+                + '  <div class="bp-ticket__actions">'
+                + '    <button class="bp-btn bp-btn--ghost bp-btn--sm" type="button" data-images="' + order.orderId + '">照片</button>'
+                + (canConfirm ? '<button class="bp-btn bp-btn--sm" type="button" data-status-set="已完成" data-order="' + order.orderId + '">确认验收</button>' : '')
+                + (canCancel ? '<button class="bp-btn bp-btn--danger bp-btn--sm" type="button" data-status-set="已取消" data-order="' + order.orderId + '">取消报修</button>' : '')
+                + '  </div>'
+                + '</div>'
+                + '</article>';
+        }
+
+        /* 筛选 */
+        document.querySelectorAll('.bp-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                document.querySelectorAll('.bp-chip').forEach(function (other) {
+                    other.setAttribute('aria-pressed', String(other === chip));
+                });
+                activeStatus = chip.dataset.status || '';
+                render();
+            });
+        });
+
+        /* 列表内动作（事件委托） */
+        listEl.addEventListener('click', function (event) {
+            var imageBtn = event.target.closest('[data-images]');
+            if (imageBtn) {
+                openImages(imageBtn.dataset.images);
+                return;
+            }
+
+            var statusBtn = event.target.closest('[data-status-set]');
+            if (!statusBtn) {
+                return;
+            }
+            var orderId = statusBtn.dataset.order;
+            var nextStatus = statusBtn.dataset.statusSet;
+
+            var question = nextStatus === '已取消'
+                ? '确定要取消工单 #' + orderId + ' 吗？'
+                : '确认工单 #' + orderId + ' 已经维修完成、通过验收吗？';
+            if (!App.UI.confirm(question)) {
+                return;
+            }
+
+            statusBtn.disabled = true;
+            App.API.call(App.API.put('/repair-orders/' + orderId + '/status', { status: nextStatus }))
+                .then(function (result) {
+                    statusBtn.disabled = false;
+                    if (!result.ok) {
+                        App.UI.alert(alertEl, result.message || '操作失败', 'err');
+                        return;
+                    }
+                    App.UI.alert(alertEl, '工单 #' + orderId + ' 已更新为「' + nextStatus + '」', 'ok');
+                    loadOrders();
+                });
+        });
+
+        /* 图片弹窗 */
+        var modal = document.getElementById('imageModal');
+
+        function openImages(orderId) {
+            modal.classList.add('is-on');
+            document.getElementById('modalTitle').textContent = '工单 #' + orderId + ' 的现场照片';
+            document.getElementById('modalBody').innerHTML = App.UI.loading('加载中');
+
+            App.API.call(App.API.get('/repair-orders/' + orderId + '/images')).then(function (result) {
+                var images = result.ok && result.data ? result.data : [];
+                if (!images.length) {
+                    document.getElementById('modalBody').innerHTML = App.UI.empty('该工单没有上传照片');
+                    return;
+                }
+                document.getElementById('modalBody').innerHTML = '<div class="bp-gallery">'
+                    + images.map(function (image) {
+                        return '<a href="' + App.UI.esc(image.imageUrl) + '" target="_blank" rel="noopener">'
+                            + '<img src="' + App.UI.esc(image.imageUrl) + '" alt="工单照片"></a>';
+                    }).join('')
+                    + '</div>';
+            });
+        }
+
+        function closeImages() {
+            modal.classList.remove('is-on');
+        }
+
+        document.getElementById('modalClose').addEventListener('click', closeImages);
+        modal.addEventListener('click', function (event) {
+            if (event.target === modal) {
+                closeImages();
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                closeImages();
+            }
+        });
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body>
+    <div class="bp-auth">
+        <!-- 左：图纸区 -->
+        <aside class="bp-auth__side">
+            <div class="bp-auth__brand">
+                <span class="bp-brand__mark">修</span>
+                <span class="bp-brand__text">DormRepairSystem</span>
+            </div>
+
+            <h1 class="bp-auth__title">宿舍报修<em>派工</em>系统</h1>
+
+            <div class="bp-auth__foot">
+                报修受理 &nbsp;/&nbsp; 派工跟踪 &nbsp;/&nbsp; 完工归档<br>
+                DORMITORY MAINTENANCE DISPATCH
+            </div>
+        </aside>
+
+        <!-- 右：表单区 -->
+        <section class="bp-auth__form">
+            <div>
+                <h2>登录</h2>
+                <p class="lede">用学号 / 工号登录，系统按角色进入对应工作台。</p>
+
+                <div class="bp-alert" id="alert" role="status"></div>
+
+                <form id="loginForm" autocomplete="off" novalidate>
+                    <div class="bp-field">
+                        <label for="account">账号 / ACCOUNT</label>
+                        <input class="bp-input" id="account" name="account" type="text" inputmode="numeric"
+                            placeholder="3001 / 2001 / admin" required>
+                    </div>
+
+                    <div class="bp-field">
+                        <label for="password">密码 / PASSWORD</label>
+                        <input class="bp-input" id="password" name="password" type="password"
+                            placeholder="请输入密码" required>
+                    </div>
+
+                    <button class="bp-btn bp-btn--primary bp-btn--block" id="submitBtn" type="submit">进入系统</button>
+                </form>
+
+                <div class="bp-auth__swap">
+                    还没有账号？<a href="register.html">注册学生 / 维修人员账号</a>
+                </div>
+
+                <div class="bp-hintcards" id="hintcards" title="点击可自动填入"></div>
+            </div>
+        </section>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        var DEMO_ACCOUNTS = [
+            { account: 'admin', password: 'admin123', label: '管理员' },
+            { account: '3001', password: '123456', label: '学生 · 张三' },
+            { account: '2001', password: '123456', label: '维修人员 · 王师傅' }
+        ];
+
+        var HOME_BY_ROLE = {
+            1: 'student-index.html',
+            2: 'admin.html',
+            3: 'repair-accept.html'
+        };
+
+        var alertEl = document.getElementById('alert');
+        var form = document.getElementById('loginForm');
+        var submitBtn = document.getElementById('submitBtn');
+        var hintcards = document.getElementById('hintcards');
+
+        /* 演示账号：点一下自动填入 */
+        hintcards.innerHTML = DEMO_ACCOUNTS.map(function (item, index) {
+            return '<div class="bp-hintcard" data-index="' + index + '">'
+                + '<span>' + item.account + ' / ' + item.password + '</span>'
+                + '<span>' + item.label + '</span>'
+                + '</div>';
+        }).join('');
+
+        hintcards.addEventListener('click', function (event) {
+            var card = event.target.closest('.bp-hintcard');
+            if (!card) {
+                return;
+            }
+            var account = DEMO_ACCOUNTS[Number(card.dataset.index)];
+            document.getElementById('account').value = account.account;
+            document.getElementById('password').value = account.password;
+            App.UI.clearAlert(alertEl);
+        });
+
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            var account = document.getElementById('account').value.trim();
+            var password = document.getElementById('password').value;
+
+            if (!account || !password) {
+                App.UI.alert(alertEl, '请输入账号和密码', 'err');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '验证中…';
+
+            App.API.call(App.API.post('/users/login', { account: account, password: password }))
+                .then(function (result) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '进入系统';
+
+                    if (!result.ok) {
+                        App.UI.alert(alertEl, result.message || '账号或密码错误', 'err');
+                        return;
+                    }
+
+                    var body = result.body;
+                    localStorage.setItem('user', JSON.stringify(body.user));
+                    localStorage.setItem('accessToken', body.accessToken);
+                    localStorage.setItem('refreshToken', body.refreshToken);
+
+                    App.UI.alert(alertEl, '登录成功，正在进入工作台…', 'ok');
+                    var home = HOME_BY_ROLE[body.user.roleId] || 'login.html';
+                    setTimeout(function () {
+                        location.href = home;
+                    }, 260);
+                });
+        });
+    </script>
+</body>
+
+</html>

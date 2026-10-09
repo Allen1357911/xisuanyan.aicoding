@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的任务 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="我的任务" data-kicker="REPAIRMAN / MY JOBS">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>我的任务</h2>
+                    <p>维修中 → 提交完工置为「待确认」，报修人确认验收后才变「已完成」。</p>
+                </div>
+                <a class="bp-btn bp-btn--primary" href="repair-accept.html">去接新工单</a>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <section class="bp-stats bp-in">
+                <div class="bp-stat bp-stat--accent">
+                    <div class="bp-stat__n" id="statAll">—</div>
+                    <div class="bp-stat__k">我的工单</div>
+                </div>
+                <div class="bp-stat bp-stat--doing">
+                    <div class="bp-stat__n" id="statDoing">—</div>
+                    <div class="bp-stat__k">维修中</div>
+                </div>
+                <div class="bp-stat bp-stat--done">
+                    <div class="bp-stat__n" id="statDone">—</div>
+                    <div class="bp-stat__k">已完成</div>
+                </div>
+                <div class="bp-stat bp-stat--cancel">
+                    <div class="bp-stat__n" id="statCancel">—</div>
+                    <div class="bp-stat__k">已取消</div>
+                </div>
+            </section>
+
+            <div class="bp-filters bp-in" style="margin-top:18px">
+                <span class="bp-filters__label">状态筛选</span>
+                <button class="bp-chip" type="button" data-status="" aria-pressed="true">全部</button>
+                <button class="bp-chip" type="button" data-status="维修中" aria-pressed="false">维修中</button>
+                <button class="bp-chip" type="button" data-status="待确认" aria-pressed="false">待确认</button>
+                <button class="bp-chip" type="button" data-status="已完成" aria-pressed="false">已完成</button>
+                <button class="bp-chip" type="button" data-status="已取消" aria-pressed="false">已取消</button>
+            </div>
+
+            <div class="bp-tickets" id="list">
+                <div class="bp-loading">加载中</div>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <!-- 图片查看 -->
+    <div class="bp-modal" id="imageModal" role="dialog" aria-modal="true">
+        <div class="bp-modal__box">
+            <div class="bp-modal__head">
+                <h3 id="modalTitle">现场照片</h3>
+                <button class="bp-btn bp-btn--ghost bp-btn--sm" id="modalClose" type="button">关闭</button>
+            </div>
+            <div class="bp-modal__body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        var user = App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+        var listEl = document.getElementById('list');
+        var orders = [];
+        var activeStatus = '';
+
+        if (user) {
+            loadOrders();
+        }
+
+        function loadOrders() {
+            listEl.innerHTML = App.UI.loading('加载中');
+            App.API.call(App.API.get('/repair-orders', { repairmanId: user.userId })).then(function (result) {
+                if (!result.ok) {
+                    listEl.innerHTML = App.UI.empty('加载失败', result.message || '');
+                    return;
+                }
+                orders = result.data || [];
+
+                var counts = { '维修中': 0, '已完成': 0, '已取消': 0 };
+                orders.forEach(function (order) {
+                    if (counts[order.orderStatus] !== undefined) {
+                        counts[order.orderStatus] += 1;
+                    }
+                });
+                document.getElementById('statAll').textContent = orders.length;
+                document.getElementById('statDoing').textContent = counts['维修中'];
+                document.getElementById('statDone').textContent = counts['已完成'];
+                document.getElementById('statCancel').textContent = counts['已取消'];
+
+                render();
+            });
+        }
+
+        function render() {
+            var shown = activeStatus
+                ? orders.filter(function (order) { return order.orderStatus === activeStatus; })
+                : orders;
+
+            App.UI.list(listEl, shown, function (order) {
+                // 只有维修中的工单可以提交完工确认；待确认的工单在等学生验收，师傅这边不再给动作
+                var canSubmitFinish = order.orderStatus === '维修中';
+                return '<article class="bp-ticket">'
+                    + '<div class="bp-ticket__stub">'
+                    + '  <span class="bp-ticket__no">工单</span>'
+                    + '  <span class="bp-ticket__id">' + App.UI.esc(order.orderId) + '</span>'
+                    + '  <span class="bp-ticket__no">' + App.UI.date(order.createTime) + '</span>'
+                    + '</div>'
+                    + '<div class="bp-ticket__body">'
+                    + '  <div class="bp-ticket__title">'
+                    + '    <span class="bp-ticket__device">' + App.UI.esc(order.deviceType || '未填设备') + '</span>'
+                    + App.UI.stamp(order.orderStatus, true)
+                    + '  </div>'
+                    + '  <p class="bp-ticket__desc">' + App.UI.esc(order.problemDesc || '') + '</p>'
+                    + '  <div class="bp-ticket__meta">'
+                    + '    <span>楼栋 <b>' + App.UI.esc(order.building || '—') + '</b></span>'
+                    + '    <span>房间 <b>' + App.UI.esc(order.roomNum || '—') + '</b></span>'
+                    + '    <span>报修人 <b>#' + App.UI.esc(order.userId) + '</b></span>'
+                    + '    <span>更新 <b>' + App.UI.time(order.updateTime) + '</b></span>'
+                    + '  </div>'
+                    + '</div>'
+                    + '<div class="bp-ticket__side">'
+                    + '  <div class="bp-ticket__actions">'
+                    + '    <button class="bp-btn bp-btn--ghost bp-btn--sm" type="button" data-images="' + order.orderId + '">照片</button>'
+                    + (canSubmitFinish ? '<button class="bp-btn bp-btn--primary bp-btn--sm" type="button" data-finish="' + order.orderId + '">提交完工</button>' : '')
+                    + '  </div>'
+                    + '</div>'
+                    + '</article>';
+            });
+        }
+
+        /* 筛选 */
+        document.querySelectorAll('.bp-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                document.querySelectorAll('.bp-chip').forEach(function (other) {
+                    other.setAttribute('aria-pressed', String(other === chip));
+                });
+                activeStatus = chip.dataset.status || '';
+                render();
+            });
+        });
+
+        /* 列表内动作 */
+        listEl.addEventListener('click', function (event) {
+            var imageBtn = event.target.closest('[data-images]');
+            if (imageBtn) {
+                openImages(imageBtn.dataset.images);
+                return;
+            }
+
+            var finishBtn = event.target.closest('[data-finish]');
+            if (!finishBtn) {
+                return;
+            }
+            var orderId = finishBtn.dataset.finish;
+            if (!App.UI.confirm('确认工单 #' + orderId + ' 已经维修完成，提交给报修人验收吗？')) {
+                return;
+            }
+
+            finishBtn.disabled = true;
+            finishBtn.textContent = '提交中…';
+            App.API.call(App.API.put('/repair-orders/' + orderId + '/status', { status: '待确认' }))
+                .then(function (result) {
+                    if (!result.ok) {
+                        finishBtn.disabled = false;
+                        finishBtn.textContent = '提交完工';
+                        App.UI.alert(alertEl, result.message || '操作失败', 'err');
+                        return;
+                    }
+                    App.UI.alert(alertEl, '工单 #' + orderId + ' 已提交完工，等待报修人确认验收', 'ok');
+                    loadOrders();
+                });
+        });
+
+        /* 图片弹窗 */
+        var modal = document.getElementById('imageModal');
+
+        function openImages(orderId) {
+            modal.classList.add('is-on');
+            document.getElementById('modalTitle').textContent = '工单 #' + orderId + ' 的现场照片';
+            document.getElementById('modalBody').innerHTML = App.UI.loading('加载中');
+
+            App.API.call(App.API.get('/repair-orders/' + orderId + '/images')).then(function (result) {
+                var images = result.ok && result.data ? result.data : [];
+                if (!images.length) {
+                    document.getElementById('modalBody').innerHTML = App.UI.empty('该工单没有照片');
+                    return;
+                }
+                document.getElementById('modalBody').innerHTML = '<div class="bp-gallery">'
+                    + images.map(function (image) {
+                        return '<a href="' + App.UI.esc(image.imageUrl) + '" target="_blank" rel="noopener">'
+                            + '<img src="' + App.UI.esc(image.imageUrl) + '" alt="现场照片"></a>';
+                    }).join('')
+                    + '</div>';
+            });
+        }
+
+        function closeImages() {
+            modal.classList.remove('is-on');
+        }
+
+        document.getElementById('modalClose').addEventListener('click', closeImages);
+        modal.addEventListener('click', function (event) {
+            if (event.target === modal) {
+                closeImages();
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                closeImages();
+            }
+        });
+    </script>
+</body>
+
+</html>

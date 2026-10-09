@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>总览 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="调度总览" data-kicker="ADMIN / DASHBOARD">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>调度总览</h2>
+                    <p>全校宿舍报修的总体情况，以及需要人工介入的积压工单。</p>
+                </div>
+                <button class="bp-btn bp-btn--ghost" id="refreshBtn" type="button">刷新数据</button>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <section class="bp-stats bp-in">
+                <div class="bp-stat bp-stat--accent">
+                    <div class="bp-stat__n" id="statAll">—</div>
+                    <div class="bp-stat__k">工单总数</div>
+                </div>
+                <div class="bp-stat bp-stat--pending">
+                    <div class="bp-stat__n" id="statPending">—</div>
+                    <div class="bp-stat__k">待处理</div>
+                </div>
+                <div class="bp-stat bp-stat--doing">
+                    <div class="bp-stat__n" id="statDoing">—</div>
+                    <div class="bp-stat__k">维修中</div>
+                </div>
+                <div class="bp-stat bp-stat--done">
+                    <div class="bp-stat__n" id="statDone">—</div>
+                    <div class="bp-stat__k">已完成</div>
+                </div>
+                <div class="bp-stat bp-stat--cancel">
+                    <div class="bp-stat__n" id="statCancel">—</div>
+                    <div class="bp-stat__k">已取消</div>
+                </div>
+            </section>
+
+            <section class="bp-stats bp-in" style="margin-top:12px">
+                <div class="bp-stat">
+                    <div class="bp-stat__n" id="statStudents">—</div>
+                    <div class="bp-stat__k">学生账号</div>
+                </div>
+                <div class="bp-stat">
+                    <div class="bp-stat__n" id="statRepairmen">—</div>
+                    <div class="bp-stat__k">维修人员</div>
+                </div>
+                <div class="bp-stat">
+                    <div class="bp-stat__n" id="statDorms">—</div>
+                    <div class="bp-stat__k">已登记宿舍</div>
+                </div>
+            </section>
+
+            <div class="bp-card bp-in" style="margin-top:18px">
+                <div class="bp-card__head">
+                    <h3>待处理工单 / BACKLOG</h3>
+                    <a href="admin-orders.html" style="font-size:12px">进入工单管理 →</a>
+                </div>
+                <div id="backlog">
+                    <div class="bp-loading">加载中</div>
+                </div>
+            </div>
+
+            <div class="bp-card bp-in">
+                <div class="bp-card__head">
+                    <h3>管理入口 / MODULES</h3>
+                    <span class="bp-card__hint">4 个模块</span>
+                </div>
+                <div class="bp-stats">
+                    <a class="bp-stat" href="admin-orders.html" style="border-bottom:0">
+                        <div class="bp-stat__n" style="font-size:16px">报修工单</div>
+                        <div class="bp-stat__k">查询 / 改状态 / 删除</div>
+                    </a>
+                    <a class="bp-stat" href="admin-dormitories.html" style="border-bottom:0">
+                        <div class="bp-stat__n" style="font-size:16px">宿舍管理</div>
+                        <div class="bp-stat__k">绑定关系维护</div>
+                    </a>
+                    <a class="bp-stat" href="admin-students.html" style="border-bottom:0">
+                        <div class="bp-stat__n" style="font-size:16px">学生管理</div>
+                        <div class="bp-stat__k">账号与宿舍</div>
+                    </a>
+                    <a class="bp-stat" href="admin-repairmen.html" style="border-bottom:0">
+                        <div class="bp-stat__n" style="font-size:16px">维修人员</div>
+                        <div class="bp-stat__k">账号管理</div>
+                    </a>
+                </div>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+
+        loadAll();
+        document.getElementById('refreshBtn').addEventListener('click', loadAll);
+
+        function countOrders(status) {
+            var params = { includeUserInfo: 'true', page: 1, size: 1 };
+            if (status) {
+                params.status = status;
+            }
+            return App.API.call(App.API.get('/repair-orders', params)).then(function (result) {
+                return result.ok && result.data ? (result.data.total || 0) : 0;
+            });
+        }
+
+        function countUsers(roleId) {
+            return App.API.call(App.API.get('/users', { roleId: roleId, page: 1, size: 1 })).then(function (result) {
+                return result.ok && result.data ? (result.data.total || 0) : 0;
+            });
+        }
+
+        function loadAll() {
+            document.getElementById('backlog').innerHTML = App.UI.loading('加载中');
+
+            Promise.all([
+                countOrders(''),
+                countOrders('待处理'),
+                countOrders('维修中'),
+                countOrders('已完成'),
+                countOrders('已取消'),
+                countUsers(1),
+                countUsers(3),
+                App.API.call(App.API.get('/dormitories', { page: 1, size: 1 })).then(function (result) {
+                    return result.ok && result.data ? (result.data.total || 0) : 0;
+                })
+            ]).then(function (values) {
+                document.getElementById('statAll').textContent = values[0];
+                document.getElementById('statPending').textContent = values[1];
+                document.getElementById('statDoing').textContent = values[2];
+                document.getElementById('statDone').textContent = values[3];
+                document.getElementById('statCancel').textContent = values[4];
+                document.getElementById('statStudents').textContent = values[5];
+                document.getElementById('statRepairmen').textContent = values[6];
+                document.getElementById('statDorms').textContent = values[7];
+            });
+
+            /* 积压工单：取最近 4 条待处理 */
+            App.API.call(App.API.get('/repair-orders', {
+                includeUserInfo: 'true',
+                status: '待处理',
+                page: 1,
+                size: 4
+            })).then(function (result) {
+                var records = result.ok && result.data ? (result.data.records || []) : [];
+                App.UI.list(document.getElementById('backlog'), records, function (order) {
+                    return '<article class="bp-ticket">'
+                        + '<div class="bp-ticket__stub">'
+                        + '  <span class="bp-ticket__no">工单</span>'
+                        + '  <span class="bp-ticket__id">' + App.UI.esc(order.orderId) + '</span>'
+                        + '</div>'
+                        + '<div class="bp-ticket__body">'
+                        + '  <div class="bp-ticket__title">'
+                        + '    <span class="bp-ticket__device">' + App.UI.esc(order.deviceType || '未填设备') + '</span>'
+                        + App.UI.stamp(order.orderStatus, true)
+                        + '  </div>'
+                        + '  <p class="bp-ticket__desc">' + App.UI.esc(order.problemDesc || '') + '</p>'
+                        + '  <div class="bp-ticket__meta">'
+                        + '    <span>学生 <b>' + App.UI.esc(order.userName || ('#' + order.userId)) + '</b></span>'
+                        + '    <span>地址 <b>' + App.UI.esc((order.building || '—') + ' ' + (order.roomNum || '')) + '</b></span>'
+                        + '    <span>已等待 <b>' + App.UI.date(order.createTime) + '</b> 起</span>'
+                        + '  </div>'
+                        + '</div>'
+                        + '<div class="bp-ticket__side">'
+                        + '  <a class="bp-btn bp-btn--ghost bp-btn--sm" href="admin-orders.html">处理</a>'
+                        + '</div>'
+                        + '</article>';
+                });
+            });
+        }
+    </script>
+</body>
+
+</html>

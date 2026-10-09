@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生管理 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="学生管理" data-kicker="ADMIN / STUDENTS">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>学生管理</h2>
+                    <p>账号以 3 开头自动注册为学生。删除学生会连带清理其宿舍绑定与全部报修单。</p>
+                </div>
+                <button class="bp-btn bp-btn--ghost" id="refreshBtn" type="button">刷新</button>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <div class="bp-filters bp-in">
+                <span class="bp-filters__label">学生总数</span>
+                <span class="mono" id="totalInfo">—</span>
+                <input class="bp-input" id="search" type="text" placeholder="搜索学号 / 姓名"
+                    style="width:auto;min-width:220px;margin-left:auto">
+            </div>
+
+            <div id="tableWrap">
+                <div class="bp-loading">加载中</div>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+        var tableWrap = document.getElementById('tableWrap');
+        var searchInput = document.getElementById('search');
+        var records = [];
+
+        load();
+        document.getElementById('refreshBtn').addEventListener('click', load);
+        searchInput.addEventListener('input', render);
+
+        function load() {
+            tableWrap.innerHTML = App.UI.loading('加载中');
+            App.API.call(App.API.get('/users', { roleId: 1, page: 1, size: 1000 })).then(function (result) {
+                if (!result.ok) {
+                    tableWrap.innerHTML = App.UI.empty('加载失败', result.message || '');
+                    return;
+                }
+                var pageData = result.data || {};
+                records = pageData.records || [];
+                document.getElementById('totalInfo').textContent = pageData.total || records.length;
+                render();
+            });
+        }
+
+        function render() {
+            var keyword = searchInput.value.trim().toLowerCase();
+            var shown = keyword
+                ? records.filter(function (user) {
+                    return String(user.account || '').toLowerCase().indexOf(keyword) >= 0
+                        || String(user.userName || '').toLowerCase().indexOf(keyword) >= 0;
+                })
+                : records;
+
+            if (!shown.length) {
+                tableWrap.innerHTML = App.UI.empty('没有匹配的学生', keyword ? '换个关键词试试' : '还没有学生账号');
+                return;
+            }
+
+            tableWrap.innerHTML = '<table class="bp-table">'
+                + '<thead><tr>'
+                + '<th>学号</th><th>姓名</th><th>宿舍</th><th>注册时间</th>'
+                + '<th style="text-align:right">操作</th>'
+                + '</tr></thead><tbody>'
+                + shown.map(function (user) {
+                    var dorm = user.building
+                        ? App.UI.esc(user.building) + ' ' + App.UI.esc(user.roomNum || '')
+                        : '<span class="bp-muted">未绑定</span>';
+                    return '<tr>'
+                        + '<td class="num">' + App.UI.esc(user.account || '—') + '</td>'
+                        + '<td>' + App.UI.esc(user.userName || '—') + '</td>'
+                        + '<td>' + dorm + '</td>'
+                        + '<td class="num">' + App.UI.time(user.createTime) + '</td>'
+                        + '<td><div class="bp-table__actions">'
+                        + '<button class="bp-btn bp-btn--danger bp-btn--sm" type="button" data-delete="' + user.userId + '"'
+                        + ' data-name="' + App.UI.esc(user.userName || user.account) + '">删除账号</button>'
+                        + '</div></td>'
+                        + '</tr>';
+                }).join('')
+                + '</tbody></table>';
+        }
+
+        tableWrap.addEventListener('click', function (event) {
+            var button = event.target.closest('[data-delete]');
+            if (!button) {
+                return;
+            }
+            var userId = button.dataset.delete;
+            var name = button.dataset.name;
+            if (!App.UI.confirm('删除学生 ' + name + '？其宿舍绑定与全部报修单会被一并删除，无法恢复。')) {
+                return;
+            }
+
+            button.disabled = true;
+            App.API.call(App.API.del('/users/' + userId)).then(function (result) {
+                if (!result.ok) {
+                    button.disabled = false;
+                    App.UI.alert(alertEl, result.message || '删除失败', 'err');
+                    return;
+                }
+                App.UI.alert(alertEl, '学生 ' + name + ' 已删除', 'ok');
+                load();
+            });
+        });
+    </script>
+</body>
+
+</html>

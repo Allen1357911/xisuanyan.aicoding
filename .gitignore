@@ -1,0 +1,32 @@
+# IDE 配置
+.idea/
+
+# Maven 构建目录
+target/
+
+# Node.js 前端依赖
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# 日志文件
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 敏感配置文件（如包含密钥）
+application-local.yml
+*.properties
+.env
+.env.local
+
+# 前端构建产物（由 npm run build 生成，不需要提交）
+dist/
+
+# Vue 版前端工程（2.0 练习用，本地保留但不入库）
+src/main/resources/static/temp/
+
+# 上传的图片（本地文件存储）
+uploads/

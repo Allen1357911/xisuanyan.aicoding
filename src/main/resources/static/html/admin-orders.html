@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>报修工单 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="报修工单" data-kicker="ADMIN / WORK ORDERS">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>报修工单</h2>
+                    <p>可按状态筛选与分页浏览，直接在下拉框里改状态，删除工单会一并清理其照片。</p>
+                </div>
+                <button class="bp-btn bp-btn--ghost" id="refreshBtn" type="button">刷新</button>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <div class="bp-filters bp-in">
+                <span class="bp-filters__label">状态筛选</span>
+                <button class="bp-chip" type="button" data-status="" aria-pressed="true">全部</button>
+                <button class="bp-chip" type="button" data-status="待处理" aria-pressed="false">待处理</button>
+                <button class="bp-chip" type="button" data-status="维修中" aria-pressed="false">维修中</button>
+                <button class="bp-chip" type="button" data-status="待确认" aria-pressed="false">待确认</button>
+                <button class="bp-chip" type="button" data-status="done" aria-pressed="false">已完结</button>
+
+                <span class="bp-filters__label" style="margin-left:auto">每页</span>
+                <select class="bp-select" id="pageSize" style="width:auto">
+                    <option value="5">5 条</option>
+                    <option value="10">10 条</option>
+                    <option value="20">20 条</option>
+                </select>
+            </div>
+
+            <div id="tableWrap">
+                <div class="bp-loading">加载中</div>
+            </div>
+
+            <div class="bp-pager bp-hide" id="pager">
+                <div class="bp-pager__info" id="pagerInfo"></div>
+                <div class="bp-pager__ctl" id="pagerCtl"></div>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <!-- 图片查看 -->
+    <div class="bp-modal" id="imageModal" role="dialog" aria-modal="true">
+        <div class="bp-modal__box">
+            <div class="bp-modal__head">
+                <h3 id="modalTitle">工单照片</h3>
+                <button class="bp-btn bp-btn--ghost bp-btn--sm" id="modalClose" type="button">关闭</button>
+            </div>
+            <div class="bp-modal__body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        var STATUS_OPTIONS = ['待处理', '维修中', '待确认', '已完成', '已取消'];
+        var STATUS_PARAM = { '': '', '待处理': '待处理', '维修中': '维修中', '待确认': '待确认', 'done': '已完成,已取消' };
+
+        App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+        var tableWrap = document.getElementById('tableWrap');
+        var pager = document.getElementById('pager');
+        var state = { status: '', page: 1, size: 5, pages: 1, total: 0 };
+
+        load();
+
+        document.getElementById('refreshBtn').addEventListener('click', function () {
+            load();
+        });
+
+        document.getElementById('pageSize').addEventListener('change', function (event) {
+            state.size = Number(event.target.value);
+            state.page = 1;
+            load();
+        });
+
+        document.querySelectorAll('.bp-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                document.querySelectorAll('.bp-chip').forEach(function (other) {
+                    other.setAttribute('aria-pressed', String(other === chip));
+                });
+                state.status = chip.dataset.status || '';
+                state.page = 1;
+                load();
+            });
+        });
+
+        function load() {
+            tableWrap.innerHTML = App.UI.loading('加载中');
+
+            var params = {
+                includeUserInfo: 'true',
+                page: state.page,
+                size: state.size
+            };
+            var statusParam = STATUS_PARAM[state.status];
+            if (statusParam) {
+                params.status = statusParam;
+            }
+
+            App.API.call(App.API.get('/repair-orders', params)).then(function (result) {
+                if (!result.ok) {
+                    tableWrap.innerHTML = App.UI.empty('加载失败', result.message || '');
+                    pager.classList.add('bp-hide');
+                    return;
+                }
+
+                var pageData = result.data || {};
+                var records = pageData.records || [];
+                state.total = pageData.total || 0;
+                state.pages = pageData.pages || 1;
+                state.page = pageData.current || state.page;
+
+                renderTable(records);
+                renderPager();
+            });
+        }
+
+        function renderTable(records) {
+            if (!records.length) {
+                tableWrap.innerHTML = App.UI.empty('没有符合条件的工单', '换个状态筛选试试');
+                pager.classList.add('bp-hide');
+                return;
+            }
+
+            tableWrap.innerHTML = '<table class="bp-table">'
+                + '<thead><tr>'
+                + '<th>工单号</th><th>设备类型</th><th>报修学生</th><th>地址</th>'
+                + '<th>维修人员</th><th>状态</th><th>提交时间</th><th style="text-align:right">操作</th>'
+                + '</tr></thead><tbody>'
+                + records.map(row).join('')
+                + '</tbody></table>';
+        }
+
+        function row(order) {
+            var options = STATUS_OPTIONS.map(function (status) {
+                var selected = status === order.orderStatus ? ' selected' : '';
+                return '<option value="' + status + '"' + selected + '>' + status + '</option>';
+            }).join('');
+
+            return '<tr>'
+                + '<td class="num">#' + App.UI.esc(order.orderId) + '</td>'
+                + '<td>' + App.UI.esc(order.deviceType || '—') + '</td>'
+                + '<td>' + App.UI.esc(order.userName || '—')
+                + '  <span class="bp-muted mono" style="font-size:11px">#' + App.UI.esc(order.userId) + '</span></td>'
+                + '<td>' + App.UI.esc((order.building || '—') + ' ' + (order.roomNum || '')) + '</td>'
+                + '<td>' + (order.repairmanName
+                    ? App.UI.esc(order.repairmanName)
+                    : '<span class="bp-muted">待接单</span>') + '</td>'
+                + '<td>' + App.UI.stamp(order.orderStatus) + '</td>'
+                + '<td class="num">' + App.UI.time(order.createTime) + '</td>'
+                + '<td><div class="bp-table__actions">'
+                + '  <select class="bp-select" data-status-for="' + order.orderId + '" title="修改状态">' + options + '</select>'
+                + '  <button class="bp-btn bp-btn--ghost bp-btn--sm" type="button" data-images="' + order.orderId + '">照片</button>'
+                + '  <button class="bp-btn bp-btn--danger bp-btn--sm" type="button" data-delete="' + order.orderId + '">删除</button>'
+                + '</div></td>'
+                + '</tr>';
+        }
+
+        function renderPager() {
+            pager.classList.remove('bp-hide');
+            document.getElementById('pagerInfo').textContent =
+                '共 ' + state.total + ' 条 · 第 ' + state.page + ' / ' + state.pages + ' 页 · 每页 ' + state.size + ' 条';
+
+            var buttons = [];
+            buttons.push(btn('首页', 1, state.page === 1));
+            buttons.push(btn('‹', state.page - 1, state.page === 1));
+
+            var start = Math.max(1, state.page - 2);
+            var end = Math.min(state.pages, start + 4);
+            start = Math.max(1, end - 4);
+            for (var i = start; i <= end; i++) {
+                buttons.push('<button type="button" data-page="' + i + '"'
+                    + (i === state.page ? ' aria-current="true"' : '') + '>' + i + '</button>');
+            }
+
+            buttons.push(btn('›', state.page + 1, state.page >= state.pages));
+            buttons.push(btn('末页', state.pages, state.page >= state.pages));
+
+            document.getElementById('pagerCtl').innerHTML = buttons.join('');
+        }
+
+        function btn(label, page, disabled) {
+            return '<button type="button" data-page="' + page + '"'
+                + (disabled ? ' disabled' : '') + '>' + label + '</button>';
+        }
+
+        pager.addEventListener('click', function (event) {
+            var button = event.target.closest('[data-page]');
+            if (!button || button.disabled) {
+                return;
+            }
+            var page = Number(button.dataset.page);
+            if (page >= 1 && page <= state.pages && page !== state.page) {
+                state.page = page;
+                load();
+            }
+        });
+
+        /* 表格内动作 */
+        tableWrap.addEventListener('change', function (event) {
+            var select = event.target.closest('[data-status-for]');
+            if (!select) {
+                return;
+            }
+            var orderId = select.dataset.statusFor;
+            var nextStatus = select.value;
+            if (!App.UI.confirm('把工单 #' + orderId + ' 的状态改为「' + nextStatus + '」？')) {
+                load();
+                return;
+            }
+            select.disabled = true;
+
+            App.API.call(App.API.put('/repair-orders/' + orderId + '/status', { status: nextStatus }))
+                .then(function (result) {
+                    select.disabled = false;
+                    if (!result.ok) {
+                        App.UI.alert(alertEl, result.message || '状态修改失败', 'err');
+                        load();
+                        return;
+                    }
+                    App.UI.alert(alertEl, '工单 #' + orderId + ' 已改为「' + nextStatus + '」', 'ok');
+                    load();
+                });
+        });
+
+        tableWrap.addEventListener('click', function (event) {
+            var imageBtn = event.target.closest('[data-images]');
+            if (imageBtn) {
+                openImages(imageBtn.dataset.images);
+                return;
+            }
+
+            var deleteBtn = event.target.closest('[data-delete]');
+            if (!deleteBtn) {
+                return;
+            }
+            var orderId = deleteBtn.dataset.delete;
+            if (!App.UI.confirm('删除工单 #' + orderId + '？该工单的照片也会一并删除，且无法恢复。')) {
+                return;
+            }
+
+            deleteBtn.disabled = true;
+            App.API.call(App.API.del('/repair-orders/' + orderId)).then(function (result) {
+                if (!result.ok) {
+                    deleteBtn.disabled = false;
+                    App.UI.alert(alertEl, result.message || '删除失败', 'err');
+                    return;
+                }
+                App.UI.alert(alertEl, '工单 #' + orderId + ' 已删除', 'ok');
+                /* 删掉当前页最后一条时回退一页 */
+                if (state.page > 1 && state.total % state.size === 1) {
+                    state.page -= 1;
+                }
+                load();
+            });
+        });
+
+        /* 图片弹窗 */
+        var modal = document.getElementById('imageModal');
+
+        function openImages(orderId) {
+            modal.classList.add('is-on');
+            document.getElementById('modalTitle').textContent = '工单 #' + orderId + ' 的现场照片';
+            document.getElementById('modalBody').innerHTML = App.UI.loading('加载中');
+
+            App.API.call(App.API.get('/repair-orders/' + orderId + '/images')).then(function (result) {
+                var images = result.ok && result.data ? result.data : [];
+                if (!images.length) {
+                    document.getElementById('modalBody').innerHTML = App.UI.empty('该工单没有照片');
+                    return;
+                }
+                document.getElementById('modalBody').innerHTML = '<div class="bp-gallery">'
+                    + images.map(function (image) {
+                        return '<a href="' + App.UI.esc(image.imageUrl) + '" target="_blank" rel="noopener">'
+                            + '<img src="' + App.UI.esc(image.imageUrl) + '" alt="现场照片"></a>';
+                    }).join('')
+                    + '</div>';
+            });
+        }
+
+        function closeImages() {
+            modal.classList.remove('is-on');
+        }
+
+        document.getElementById('modalClose').addEventListener('click', closeImages);
+        modal.addEventListener('click', function (event) {
+            if (event.target === modal) {
+                closeImages();
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                closeImages();
+            }
+        });
+    </script>
+</body>
+
+</html>

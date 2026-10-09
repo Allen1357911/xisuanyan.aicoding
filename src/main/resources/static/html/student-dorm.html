@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的宿舍 · 宿舍报修系统</title>
+    <link rel="stylesheet" href="../css/app.css">
+</head>
+
+<body data-title="我的宿舍" data-kicker="STUDENT / DORMITORY">
+    <div class="bp-app">
+        <div class="bp-brand">
+            <span class="bp-brand__mark">修</span>
+            <span class="bp-brand__text">DormRepairSystem</span>
+        </div>
+
+        <header class="bp-top" id="bpTop"></header>
+        <nav class="bp-rail" id="bpRail" aria-label="工作台导航"></nav>
+
+        <main class="bp-main">
+            <div class="bp-page-head bp-in">
+                <div>
+                    <h2>宿舍绑定</h2>
+                    <p>一个学生只能绑定一个宿舍，重复提交会覆盖原有信息。</p>
+                </div>
+            </div>
+
+            <div class="bp-alert" id="alert" role="status"></div>
+
+            <div class="bp-card bp-in">
+                <div class="bp-card__head">
+                    <h3>当前绑定 / CURRENT</h3>
+                    <span class="bp-card__hint" id="currentBadge">读取中…</span>
+                </div>
+                <div id="currentBox">
+                    <div class="bp-loading">加载中</div>
+                </div>
+            </div>
+
+            <div class="bp-card bp-in">
+                <div class="bp-card__head">
+                    <h3>入住登记 / REGISTRATION</h3>
+                    <span class="bp-card__hint" id="formMode">新增绑定</span>
+                </div>
+
+                <form id="dormForm" novalidate>
+                    <div class="bp-field-row">
+                        <div class="bp-field">
+                            <label for="building">楼栋 / BUILDING</label>
+                            <input class="bp-input" id="building" type="text" placeholder="如 1栋 / 东区5栋" required>
+                        </div>
+                        <div class="bp-field">
+                            <label for="roomNum">房间号 / ROOM</label>
+                            <input class="bp-input" id="roomNum" type="text" placeholder="如 502 / 301-2" required>
+                        </div>
+                    </div>
+
+                    <div class="bp-row">
+                        <button class="bp-btn bp-btn--primary" id="submitBtn" type="submit">保存宿舍信息</button>
+                        <span class="bp-muted" style="font-size:12px">保存后即可提交报修</span>
+                    </div>
+                </form>
+            </div>
+
+            <div id="titleblock"></div>
+        </main>
+    </div>
+
+    <script src="../js/axios.min.js"></script>
+    <script src="../js/axios.js"></script>
+    <script src="../js/common.js"></script>
+    <script>
+        var user = App.Shell.mount();
+        document.getElementById('titleblock').innerHTML = App.Shell.titleblock();
+
+        var alertEl = document.getElementById('alert');
+        var form = document.getElementById('dormForm');
+        var submitBtn = document.getElementById('submitBtn');
+        var buildingInput = document.getElementById('building');
+        var roomInput = document.getElementById('roomNum');
+        var isBound = false;
+
+        if (user) {
+            loadDormitory();
+        }
+
+        function loadDormitory() {
+            App.API.call(App.API.get('/dormitories', { userId: user.userId })).then(function (result) {
+                var dorm = result.ok ? result.data : null;
+                var box = document.getElementById('currentBox');
+                var badge = document.getElementById('currentBadge');
+
+                isBound = !!dorm;
+                document.getElementById('formMode').textContent = isBound ? '修改绑定' : '新增绑定';
+                submitBtn.textContent = isBound ? '更新宿舍信息' : '绑定宿舍';
+
+                if (!dorm) {
+                    badge.textContent = '未绑定';
+                    box.innerHTML = '<div class="bp-empty">'
+                        + '<div class="bp-empty__big">尚未登记宿舍</div>'
+                        + '<div>填写下方楼栋与房间号即可完成绑定。</div>'
+                        + '</div>';
+                    buildingInput.value = '';
+                    roomInput.value = '';
+                    return;
+                }
+
+                badge.textContent = '已绑定';
+                buildingInput.value = dorm.building || '';
+                roomInput.value = dorm.roomNum || '';
+                box.innerHTML = '<dl class="bp-kv">'
+                    + '<div><dt>楼栋 / BUILDING</dt><dd>' + App.UI.esc(dorm.building || '—') + '</dd></div>'
+                    + '<div><dt>房间号 / ROOM</dt><dd class="mono">' + App.UI.esc(dorm.roomNum || '—') + '</dd></div>'
+                    + '<div><dt>绑定时间 / SINCE</dt><dd class="mono">' + App.UI.time(dorm.createTime) + '</dd></div>'
+                    + '<div><dt>最近修改 / UPDATED</dt><dd class="mono">' + App.UI.time(dorm.updateTime) + '</dd></div>'
+                    + '</dl>';
+            });
+        }
+
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            var building = buildingInput.value.trim();
+            var roomNum = roomInput.value.trim();
+
+            if (!building || !roomNum) {
+                App.UI.alert(alertEl, '楼栋和房间号都不能为空', 'err');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '保存中…';
+
+            App.API.call(App.API.post('/dormitories', {
+                userId: user.userId,
+                building: building,
+                roomNum: roomNum
+            })).then(function (result) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = isBound ? '更新宿舍信息' : '绑定宿舍';
+
+                if (!result.ok) {
+                    App.UI.alert(alertEl, result.message || '保存失败，请稍后重试', 'err');
+                    return;
+                }
+                App.UI.alert(alertEl, result.message || '保存成功', 'ok');
+                loadDormitory();
+            });
+        });
+    </script>
+</body>
+
+</html>
